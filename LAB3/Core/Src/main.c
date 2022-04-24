@@ -47,7 +47,6 @@ UART_HandleTypeDef huart2;
 
 /* USER CODE BEGIN PV */
 uint8_t update = 0; //every 1kHz
-uint64_t check = 0;
 uint16_t PWMOut = 1000;
 float degree = 0; //Position
 float y = 0, y_p = 0; //y = sensor value, y_p = predict sensor value
@@ -475,7 +474,6 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
 {
 	if(htim == &htim11)
 	{
-		check += 65535;
 		update = 1;
 	}
 }
