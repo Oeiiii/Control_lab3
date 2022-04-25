@@ -49,10 +49,10 @@ UART_HandleTypeDef huart2;
 uint8_t update = 0; //every 1kHz
 uint16_t PWMOut = 1000;
 float degree = 0; //Position
-float y = 0, y_p = 0; //y = sensor value, y_p = predict sensor value
+float y = 0, y_p = 0, v = 0, a = 0; //y = sensor value, y_p = predict sensor value
 float p_n = 0, p_n_b = 0, p_0 = 0, p_0_b = 0;
 
-float x[3] = {0}, x_p[3] = {0}, x_k1[3] = {0}; //state (p = predict, k1 = k+1 (update))
+float x[3] = {0}, x_p[3] = {0}, x_k1[3] = {0}; //state (p = predict, k1 = k+1 (update)) : [p,v,a]
 float p[3] = {0}, p_p[3] = {0}, p_k1[3] = {0}; //covariance
 float K[3] = {0}; //kalman gain
 /* USER CODE END PV */
@@ -147,15 +147,6 @@ int main(void)
 		  x_p[1] = x[1];
 		  x_p[2] = 0;
 		  //covariance
-//		  p_p[0] = p[0] + p[3]*dt + p[6]*0.5*dt*dt + (p[1] + p[4]*dt + p[7]*0.5*dt*dt)*dt + (p[2] + p[5]*dt + p[8]*0.5*dt*dt)*0.5*dt*dt + 0.25*Q*dt*dt*dt*dt;
-//		  p_p[1] = p[1] + p[4]*dt + p[7]*0.5*dt*dt + (p[2] + p[5]*dt + p[8]*0.5*dt*dt)*dt + 0.5*Q*dt*dt*dt;
-//		  p_p[2] = p[2] + p[5]*dt + p[8]*0.5*dt*dt + 0.5*Q*dt*dt;
-//		  p_p[3] = p[3] + p[6]*dt + (p[4] + p[7]*dt)*dt + (p[5] + p[8]*dt)*0.5*dt*dt + 0.5*Q*dt*dt*dt;
-//		  p_p[4] = p[4] + p[7]*dt + (p[5] + p[8]*dt)*dt + Q*dt*dt;
-//		  p_p[5] = p[5] + p[8]*dt + Q*dt;
-//		  p_p[6] = p[6] + p[7]*dt + p[9]*0.5*dt*dt + 0.5*Q*dt*dt;
-//		  p_p[7] = p[7] + p[8]*dt + Q*dt;
-//		  p_p[8] = p[8] + Q;
 		  p_p[0] = p[0] + p[3]*dt + (p[1] + p[4]*dt)*dt + 0.25*Q*dt*dt*dt*dt;
 		  p_p[1] = p[1] + p[4]*dt + 0.5*Q*dt*dt*dt;
 		  p_p[2] = 0.5*Q*dt*dt;
@@ -187,6 +178,9 @@ int main(void)
 		  p_k1[6] = (-K[2]*p_p[0]) + p_p[6];
 		  p_k1[7] = (-K[2]*p_p[1]) + p_p[7];
 		  p_k1[8] = (-K[2]*p_p[2]) + p_p[8];
+
+		  v = x_k1[1];
+		  a = x_k1[2];
 
 		  for(int i = 0; i < 3; i++){
 			  x[i] = x_k1[i];
