@@ -49,7 +49,7 @@ UART_HandleTypeDef huart2;
 uint8_t update = 0; //every 1kHz
 uint16_t PWMOut = 1000;
 float degree = 0; //Position
-float y = 0, y_p = 0, v = 0, a = 0; //y = sensor value, y_p = predict sensor value
+float y_pre = 0 , y = 0, y_rad = 0, y_p = 0, v_p = 0, v = 0, v_k1 = 0, a_p = 0, a = 0, a_k1 = 0; //y = sensor value, y_p = predict sensor value
 float p_n = 0, p_n_b = 0, p_0 = 0, p_0_b = 0;
 
 float x[3] = {0}, x_p[3] = {0}, x_k1[3] = {0}; //state (p = predict, k1 = k+1 (update)) : [p,v,a]
@@ -120,7 +120,7 @@ int main(void)
   while (1)
   {
 	  static float dt = 0.1;
-	  static float R = 0.1, Q = 0.001;
+	  static float R = 0.05, Q = 0.05;
 
 	  __HAL_TIM_SET_COMPARE(&htim1, TIM_CHANNEL_1, PWMOut);
 
@@ -130,32 +130,48 @@ int main(void)
 
 		  //Unwrap
 		  p_n = degree;
-		  if(p_n - p_n_b < -180)
+		  if(p_n - p_n_b < -180.0)
 		  {
-			  p_0 = p_0_b + 360;
-		  }else if(p_n - p_n_b > 180)
+			  p_0 = p_0_b + 360.0;
+		  }else if(p_n - p_n_b > 180.0)
 		  {
-			  p_0 = p_0_b - 360;
+			  p_0 = p_0_b - 360.0;
 		  }
 		  y = p_0 + p_n;
 		  p_0_b = p_0;
 		  p_n_b = p_n;
 
+		  y_rad = (y*3.14)/180.0;
+		  v = (y_rad - y_pre)/dt;
+		  a = (v - v_p)/dt;
+
 		  //Predict
 		  //state
-		  x_p[0] = x[0] + x[1]*dt;
-		  x_p[1] = x[1];
-		  x_p[2] = 0;
-		  //covariance
-		  p_p[0] = p[0] + p[3]*dt + (p[1] + p[4]*dt)*dt + 0.25*Q*dt*dt*dt*dt;
-		  p_p[1] = p[1] + p[4]*dt + 0.5*Q*dt*dt*dt;
-		  p_p[2] = 0.5*Q*dt*dt;
-		  p_p[3] = p[3] + p[4]*dt + 0.5*Q*dt*dt*dt;
-		  p_p[4] = p[4] + Q*dt*dt;
-		  p_p[5] = Q*dt;
-		  p_p[6] = 0.5*Q*dt*dt;
-		  p_p[7] = Q*dt;
-		  p_p[8] = Q;
+		  x_p[0] = x[0] + x[1]*dt + x[2]*0.5*dt*dt;
+		  x_p[1] = x[1] + x[2]*dt;
+		  x_p[2] = x[2];
+//		  x_p[0] = x[0] + x[1]*dt;
+//		  x_p[1] = x[1];
+//		  x_p[2] = 0;
+//		  covariance
+		  p_p[0] = p[0] + p[3]*dt + p[6]*0.5*dt*dt + (p[1] + p[4]*dt + p[7]*0.5*dt*dt)*dt + (p[2] + p[5]*dt + p[8]*0.5*dt*dt)*0.5*dt*dt + 0.25*Q*dt*dt*dt*dt;
+		  p_p[1] = p[1] + p[4]*dt + p[7]*0.5*dt*dt + (p[2] + p[5]*dt + p[8]*0.5*dt*dt)*dt + 0.5*Q*dt*dt*dt;
+		  p_p[2] = p[2] + p[5]*dt + p[8]*0.5*dt*dt + 0.5*Q*dt*dt;
+		  p_p[3] = p[3] + p[6]*dt + (p[4] + p[7]*dt)*dt + (p[5] + p[8]*dt)*0.5*dt*dt + 0.5*Q*dt*dt*dt;
+		  p_p[4] = p[4] + p[7]*dt + (p[5] + p[8]*dt)*dt + Q*dt*dt;
+		  p_p[5] = p[5] + p[8]*dt + Q*dt;
+		  p_p[6] = p[6] + p[7]*dt + p[9]*0.5*dt*dt + 0.5*Q*dt*dt;
+		  p_p[7] = p[7] + p[8]*dt + Q*dt;
+		  p_p[8] = p[8] + Q;
+//		  p_p[0] = p[0] + p[3]*dt + (p[1] + p[4]*dt)*dt + 0.25*Q*dt*dt*dt*dt;
+//		  p_p[1] = p[1] + p[4]*dt + 0.5*Q*dt*dt*dt;
+//		  p_p[2] = 0.5*Q*dt*dt;
+//		  p_p[3] = p[3] + p[4]*dt + 0.5*Q*dt*dt*dt;
+//		  p_p[4] = p[4] + Q*dt*dt;
+//		  p_p[5] = Q*dt;
+//		  p_p[6] = 0.5*Q*dt*dt;
+//		  p_p[7] = Q*dt;
+//		  p_p[8] = Q;
 
 		  //Update
 		  //output predict
@@ -179,8 +195,8 @@ int main(void)
 		  p_k1[7] = (-K[2]*p_p[1]) + p_p[7];
 		  p_k1[8] = (-K[2]*p_p[2]) + p_p[8];
 
-		  v = x_k1[1];
-		  a = x_k1[2];
+		  v_k1 = (x_k1[1]*3.14)/180.0;
+		  a_k1 = (x_k1[2]*3.14)/180.0;
 
 		  for(int i = 0; i < 3; i++){
 			  x[i] = x_k1[i];
@@ -189,6 +205,8 @@ int main(void)
 			  p[j] = p_k1[j];
 		  }
 
+		  y_pre = y_rad;
+		  v_p = v;
 		  update = 0;
 	  }
     /* USER CODE END WHILE */
@@ -382,9 +400,9 @@ static void MX_TIM11_Init(void)
 
   /* USER CODE END TIM11_Init 1 */
   htim11.Instance = TIM11;
-  htim11.Init.Prescaler = 99;
+  htim11.Init.Prescaler = 999;
   htim11.Init.CounterMode = TIM_COUNTERMODE_UP;
-  htim11.Init.Period = 999;
+  htim11.Init.Period = 9999;
   htim11.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
   htim11.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
   if (HAL_TIM_Base_Init(&htim11) != HAL_OK)
