@@ -47,10 +47,12 @@ UART_HandleTypeDef huart2;
 
 /* USER CODE BEGIN PV */
 uint8_t update = 0; //every 1kHz
-uint16_t PWMOut = 1000;
+uint16_t PWMOut = 1000; //motor
 float degree = 0; //Position
-float y_pre = 0 , y = 0, y_rad = 0, y_p = 0, v_p = 0, v = 0, v_k1 = 0, a_p = 0, a = 0, a_k1 = 0; //y = sensor value, y_p = predict sensor value
-float p_n = 0, p_n_b = 0, p_0 = 0, p_0_b = 0;
+float y_pre = 0 , y = 0, y_rad = 0, y_p = 0; //y_pre = previous y (degree), y = current y (degree), y_rad = current y (rad), y_p = predicted y
+float v_p = 0, v = 0, v_k1 = 0; //v_p = previous v (rad/s), v = current v (rad/s), v_k1 = v from kalman
+float a_p = 0, a = 0, a_k1 = 0; //a_p = previous a (rad/s2), a = current a (rad/s2), a_k1 = a from kalman
+float p_n = 0, p_n_b = 0, p_0 = 0, p_0_b = 0; //p_n = degree from Encoder, p_n = previous degree, p_0 = unwrap degree, p_0_b = previous unwrap degree
 
 float x[3] = {0}, x_p[3] = {0}, x_k1[3] = {0}; //state (p = predict, k1 = k+1 (update)) : [p,v,a]
 float p[3] = {0}, p_p[3] = {0}, p_k1[3] = {0}; //covariance
@@ -106,12 +108,12 @@ int main(void)
   MX_TIM3_Init();
   MX_TIM11_Init();
   /* USER CODE BEGIN 2 */
-  //Motor
+  //Drive motor
   HAL_TIM_Base_Start(&htim1); //start tim1
   HAL_TIM_PWM_Start(&htim1, TIM_CHANNEL_1);
   //QEI
   HAL_TIM_Encoder_Start(&htim3, TIM_CHANNEL_ALL); //start QEI
-  //Interrupt
+  //Tim Interrupt
   HAL_TIM_Base_Start_IT(&htim11);
   /* USER CODE END 2 */
 
@@ -119,11 +121,12 @@ int main(void)
   /* USER CODE BEGIN WHILE */
   while (1)
   {
-	  static float dt = 0.1;
-	  static float R = 0.05, Q = 0.05;
+	  static float dt = 0.1; //delta t (100Hz)
+	  static float R = 0.5, Q = 800;
 
 	  __HAL_TIM_SET_COMPARE(&htim1, TIM_CHANNEL_1, PWMOut);
 
+	  //if tim interrupt
 	  if(update == 1){
 		  uint16_t rawData = TIM3->CNT;
 		  degree = ((rawData%3072)/3071.0)*360.0;
@@ -141,50 +144,39 @@ int main(void)
 		  p_0_b = p_0;
 		  p_n_b = p_n;
 
+		  //Calculate position, velocity, acceleration (motor)
 		  y_rad = (y*3.14)/180.0;
 		  v = (y_rad - y_pre)/dt;
 		  a = (v - v_p)/dt;
 
 		  //Predict
-		  //state
-		  x_p[0] = x[0] + x[1]*dt + x[2]*0.5*dt*dt;
-		  x_p[1] = x[1] + x[2]*dt;
-		  x_p[2] = x[2];
-//		  x_p[0] = x[0] + x[1]*dt;
-//		  x_p[1] = x[1];
-//		  x_p[2] = 0;
-//		  covariance
-		  p_p[0] = p[0] + p[3]*dt + p[6]*0.5*dt*dt + (p[1] + p[4]*dt + p[7]*0.5*dt*dt)*dt + (p[2] + p[5]*dt + p[8]*0.5*dt*dt)*0.5*dt*dt + 0.25*Q*dt*dt*dt*dt;
-		  p_p[1] = p[1] + p[4]*dt + p[7]*0.5*dt*dt + (p[2] + p[5]*dt + p[8]*0.5*dt*dt)*dt + 0.5*Q*dt*dt*dt;
-		  p_p[2] = p[2] + p[5]*dt + p[8]*0.5*dt*dt + 0.5*Q*dt*dt;
-		  p_p[3] = p[3] + p[6]*dt + (p[4] + p[7]*dt)*dt + (p[5] + p[8]*dt)*0.5*dt*dt + 0.5*Q*dt*dt*dt;
-		  p_p[4] = p[4] + p[7]*dt + (p[5] + p[8]*dt)*dt + Q*dt*dt;
-		  p_p[5] = p[5] + p[8]*dt + Q*dt;
-		  p_p[6] = p[6] + p[7]*dt + p[9]*0.5*dt*dt + 0.5*Q*dt*dt;
-		  p_p[7] = p[7] + p[8]*dt + Q*dt;
-		  p_p[8] = p[8] + Q;
-//		  p_p[0] = p[0] + p[3]*dt + (p[1] + p[4]*dt)*dt + 0.25*Q*dt*dt*dt*dt;
-//		  p_p[1] = p[1] + p[4]*dt + 0.5*Q*dt*dt*dt;
-//		  p_p[2] = 0.5*Q*dt*dt;
-//		  p_p[3] = p[3] + p[4]*dt + 0.5*Q*dt*dt*dt;
-//		  p_p[4] = p[4] + Q*dt*dt;
-//		  p_p[5] = Q*dt;
-//		  p_p[6] = 0.5*Q*dt*dt;
-//		  p_p[7] = Q*dt;
-//		  p_p[8] = Q;
+		  //State
+		  x_p[0] = x[0] + x[1]*dt;
+		  x_p[1] = x[1];
+		  x_p[2] = 0;
+		  //Covariance
+		  p_p[0] = p[0] + p[3]*dt + (p[1] + p[4]*dt)*dt + 0.25*Q*dt*dt*dt*dt;
+		  p_p[1] = p[1] + p[4]*dt + 0.5*Q*dt*dt*dt;
+		  p_p[2] = 0.5*Q*dt*dt;
+		  p_p[3] = p[3] + p[4]*dt + 0.5*Q*dt*dt*dt;
+		  p_p[4] = p[4] + Q*dt*dt;
+		  p_p[5] = Q*dt;
+		  p_p[6] = 0.5*Q*dt*dt;
+		  p_p[7] = Q*dt;
+		  p_p[8] = Q;
 
 		  //Update
-		  //output predict
+		  //Sensor model
 		  y_p = x_p[0];
-		  //kalman gain
+		  //Kalman gain
 		  K[0] = p_p[0]/(p_p[0]+R);
 		  K[1] = p_p[3]/(p_p[0]+R);
 		  K[2] = p_p[6]/(p_p[0]+R);
-		  //state
+		  //State
 		  x_k1[0] = x_p[0] + K[0]*(y-y_p); //y-y_p = error (real-predict)
 		  x_k1[1] = x_p[1] + K[1]*(y-y_p);
 		  x_k1[2] = x_p[2] + K[2]*(y-y_p);
-		  //covariance
+		  //Covariance
 		  p_k1[0] = (1-K[0])*p_p[0];
 		  p_k1[1] = (1-K[0])*p_p[1];
 		  p_k1[2] = (1-K[0])*p_p[2];
@@ -194,19 +186,20 @@ int main(void)
 		  p_k1[6] = (-K[2]*p_p[0]) + p_p[6];
 		  p_k1[7] = (-K[2]*p_p[1]) + p_p[7];
 		  p_k1[8] = (-K[2]*p_p[2]) + p_p[8];
-
+		  //change unit of velocity,acceleration from kalman filter
 		  v_k1 = (x_k1[1]*3.14)/180.0;
 		  a_k1 = (x_k1[2]*3.14)/180.0;
 
+		  //set new current value
 		  for(int i = 0; i < 3; i++){
 			  x[i] = x_k1[i];
 		  }
 		  for(int j = 0; j < 9; j++){
 			  p[j] = p_k1[j];
 		  }
-
 		  y_pre = y_rad;
 		  v_p = v;
+
 		  update = 0;
 	  }
     /* USER CODE END WHILE */
